@@ -118,30 +118,37 @@ Docy is built on the powerful [T3 Stack](https://create.t3.gg/), combining the b
 | **[React Hook Form](https://react-hook-form.com/)** | Form management |
 | **[Zod](https://zod.dev/)** | Schema validation |
 
-### System Architecture
+### System Architecture Diagram
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         Frontend                            │
-│  Next.js App Router • React • Tailwind • Framer Motion    │
-└─────────────────┬───────────────────────────────────────────┘
-                  │
-                  │ tRPC
-                  │
-┌─────────────────▼───────────────────────────────────────────┐
-│                      Backend API Layer                      │
-│            tRPC Routers • Server Actions • Auth            │
-└─────────────────┬───────────────────────────────────────────┘
-                  │
-        ┌─────────┼─────────┬─────────────┐
-        │         │         │             │
-        ▼         ▼         ▼             ▼
-  ┌──────────┐ ┌──────┐ ┌──────────┐ ┌──────────┐
-  │          │ │      │ │          │ │          │
-  │ Database │ │  AI  │ │  GitHub  │ │   AST    │
-  │ Prisma   │ │ APIs │ │   API    │ │ Analysis │
-  │          │ │      │ │          │ │          │
-  └──────────┘ └──────┘ └──────────┘ └──────────┘
+```mermaid
+graph TD
+    subgraph Browser
+        A[React Components] -->|tRPC Hooks| B[tRPC Client]
+    end
+
+    subgraph Server_NextJS[Server Next.js]
+        B -->|HTTP Requests| C[tRPC API Route]
+        C -->|Procedure Calls| D[tRPC Routers]
+        D -->|Database Queries| E{Prisma ORM}
+        D -->|Auth Checks| F[NextAuth.js Middleware]
+        D -->|File AI Processing| G[Core Library]
+    end
+
+    subgraph Core_Library[Core Library src/lib]
+        G -->|calls| H[downloadRepo.ts]
+        G -->|calls| I[zipExtract.ts / ast.ts]
+        G -->|calls| J[ai.ts]
+    end
+
+    subgraph External_Services[External Services]
+        E -->|SQL| K[Database]
+        J -->|API Call| L[Google Gemini AI]
+        F -->|OAuth| M[Auth Providers]
+    end
+
+    style Browser fill:#e6f7ff,stroke:#91d5ff
+    style Server_NextJS fill:#f6ffed,stroke:#b7eb8f
+    style External_Services fill:#fffbe6,stroke:#ffe58f
 ```
 
 ---
@@ -683,7 +690,9 @@ The following models are inferred from Prisma Client usage in the codebase.
 
 **Relationships**:
 
-- `createdBy` → Many-to-One → `User`
+| Field | Relationship | Target Model | Description |
+|-------|--------------|--------------|-------------|
+| `createdBy` | Many-to-One | `User` | The user who created the post |
 
 ### ProjectData
 
@@ -701,8 +710,10 @@ The following models are inferred from Prisma Client usage in the codebase.
 
 **Relationships**:
 
-- `user` → Many-to-One → `User`
-- `docs` → One-to-Many → `Documentation`
+| Field | Relationship | Target Model | Description |
+|-------|--------------|--------------|-------------|
+| `user` | Many-to-One | `User` | The user who owns the project |
+| `docs` | One-to-Many | `Documentation` | Documentation generated for this project |
 
 ### Documentation
 
@@ -719,13 +730,56 @@ The following models are inferred from Prisma Client usage in the codebase.
 | `createdAt` | Date | Yes | Creation timestamp |
 | `updatedAt` | Date | Yes | Last update timestamp |
 
-**Type Enum**:
-- `TECHNICAL`
-- `API`
+**Type Enum Values**:
+- `TECHNICAL` - Technical documentation
+- `API` - API reference documentation
 
 **Relationships**:
 
-- `projectData` → Many-to-One → `ProjectData`
+| Field | Relationship | Target Model | Description |
+|-------|--------------|--------------|-------------|
+| `projectData` | Many-to-One | `ProjectData` | The project this documentation belongs to |
+
+### Entity Relationship Diagram
+
+```mermaid
+erDiagram
+    USER ||--o{ PROJECT_DATA : has
+    USER ||--o{ POST : creates
+    PROJECT_DATA ||--|{ DOCUMENTATION : contains
+
+    USER {
+        string id PK
+        string name
+        string email
+        string image
+        datetime emailVerified
+    }
+
+    PROJECT_DATA {
+        string id PK
+        string userId FK
+        string repoisteryUrl
+        string zipFileName
+        datetime createdAt
+    }
+
+    DOCUMENTATION {
+        string id PK
+        string projectDataId FK
+        string body
+        string type
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    POST {
+        string id PK
+        string name
+        string createdById FK
+        datetime createdAt
+    }
+```
 
 ---
 
@@ -746,6 +800,10 @@ interface Repository {
 }
 ```
 
+**Used By**:
+- Dashboard navigation components
+- Repository listing components
+
 ### Doc
 
 **Source**: `src/components/DocCard.tsx`
@@ -761,6 +819,10 @@ type Doc = {
   updatedAt: string;
 };
 ```
+
+**Used By**:
+- Documentation display components
+- Documentation rendering logic
 
 ---
 
@@ -783,12 +845,15 @@ async function generateTechnicalDocumentation(ast: any): Promise<string>
 ```
 
 **Parameters**:
-- `ast` (any): Abstract Syntax Tree of the codebase
 
-**Returns**: Generated technical documentation as a string
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `ast` | any | Yes | Abstract Syntax Tree of the codebase |
+
+**Returns**: `Promise<string>` - Generated technical documentation
 
 **Dependencies**:
-- Google Gemini API
+- Google Gemini API (`@google/genai`)
 - `documentationPrompt` from `./TechnicalPrompt`
 
 **Implementation**:
@@ -821,12 +886,15 @@ async function generateApiDocumentation(ast: any): Promise<string>
 ```
 
 **Parameters**:
-- `ast` (any): Abstract Syntax Tree of the codebase
 
-**Returns**: Generated API documentation as a string
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `ast` | any | Yes | Abstract Syntax Tree of the codebase |
+
+**Returns**: `Promise<string>` - Generated API documentation
 
 **Dependencies**:
-- Google Gemini API
+- Google Gemini API (`@google/genai`)
 - `apiDocumentationPrompt` from `./ApiPrompt`
 
 ---
@@ -851,12 +919,16 @@ async function downloadRepo(
 ```
 
 **Parameters**:
-- `repoUrl` (string): Full URL of the repository
-- `repoToken` (string): Personal access token
 
-**Returns**: Buffer containing zip file, or null on failure
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `repoUrl` | string | Yes | Full URL of the git repository |
+| `repoToken` | string | Yes | Personal access token for authentication |
 
-**Dependencies**: axios
+**Returns**: `Promise<Buffer | null>` - Buffer containing zip file, or null on failure
+
+**Dependencies**: 
+- `axios` for HTTP requests
 
 **Example Usage**:
 
@@ -865,6 +937,10 @@ const buffer = await downloadRepo(
   "https://github.com/user/repo",
   "ghp_xxxxxxxxxxxxx"
 );
+
+if (buffer) {
+  // Process the downloaded repository
+}
 ```
 
 ---
@@ -886,14 +962,38 @@ async function extractFile(zipFile: Buffer): Promise<ParsedFile[]>
 ```
 
 **Parameters**:
-- `zipFile` (Buffer): Repository zip archive buffer
 
-**Returns**: Array of ParsedFile objects
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `zipFile` | Buffer | Yes | Repository zip archive buffer |
+
+**Returns**: `Promise<ParsedFile[]>` - Array of parsed file AST objects
 
 **Dependencies**:
-- adm-zip
-- Node.js fs, os, path modules
-- `parseFile` from `./ast`
+- `adm-zip` for ZIP extraction
+- Node.js `fs`, `os`, `path` modules
+- `parseFile` from `./ast` for AST parsing
+
+**Implementation Overview**:
+
+```typescript
+export async function extractFile(zipFile: Buffer): Promise<ParsedFile[]> {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "repo-"));
+  const parsedFiles: ParsedFile[] = [];
+  
+  try {
+    const zip = new AdmZip(zipFile);
+    zip.extractAllTo(tempDir, true);
+    
+    // Walk directory tree, filter files, parse supported files
+    // ...
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+  
+  return parsedFiles;
+}
+```
 
 ---
 
@@ -920,7 +1020,25 @@ const t = initTRPC.context<typeof createTRPCContext>().create({
 });
 ```
 
-**Error Response**: Includes `zodError` object with validation details when applicable.
+**Error Response Structure**:
+
+When a Zod validation error occurs:
+
+```json
+{
+  "error": {
+    "message": "Validation failed",
+    "code": "BAD_REQUEST",
+    "data": {
+      "zodError": {
+        "fieldErrors": {
+          "repoUrl": ["Invalid URL format"]
+        }
+      }
+    }
+  }
+}
+```
 
 ---
 
@@ -928,9 +1046,11 @@ const t = initTRPC.context<typeof createTRPCContext>().create({
 
 **Library**: Zod
 
-### Key Schemas
+All input validation uses Zod schemas for type-safe runtime validation.
 
-#### Repository Creation
+### Key Validation Schemas
+
+#### Repository Creation Schema
 
 ```typescript
 z.object({
@@ -940,13 +1060,21 @@ z.object({
 })
 ```
 
-#### Post Creation
+**Validation Rules**:
+- `repoisteryUrl`: Must be a non-empty string
+- `repoToken`: Must be a non-empty string
+- `type`: Must be one of: 'technical', 'api', or 'both'
+
+#### Post Creation Schema
 
 ```typescript
 z.object({ 
   name: z.string().min(1) 
 })
 ```
+
+**Validation Rules**:
+- `name`: Must be a non-empty string (minimum 1 character)
 
 ---
 
@@ -957,60 +1085,85 @@ z.object({
 | Variable | Purpose | Example |
 |----------|---------|---------|
 | `NODE_ENV` | Runtime environment | `development` or `production` |
-| `DATABASE_URL` | Prisma database connection | `postgresql://user:pass@host:5432/db` |
-| `AUTH_SECRET` | NextAuth session encryption | Random string |
-| `GITHUB_ID` | GitHub OAuth client ID | From GitHub OAuth app |
-| `GITHUB_SECRET` | GitHub OAuth client secret | From GitHub OAuth app |
+| `DATABASE_URL` | Prisma database connection string | `postgresql://user:pass@host:5432/db` |
+| `AUTH_SECRET` | NextAuth session encryption key | Random 32+ character string |
+| `GITHUB_ID` | GitHub OAuth client ID | From GitHub OAuth app settings |
+| `GITHUB_SECRET` | GitHub OAuth client secret | From GitHub OAuth app settings |
 | `GOOGLE_ID` | Google OAuth client ID | From Google Cloud Console |
 | `GOOGLE_SECRET` | Google OAuth client secret | From Google Cloud Console |
-| `GITLAB_ID` | GitLab OAuth client ID | From GitLab OAuth app |
-| `GITLAB_SECRET` | GitLab OAuth client secret | From GitLab OAuth app |
+| `GITLAB_ID` | GitLab OAuth client ID | From GitLab OAuth app settings |
+| `GITLAB_SECRET` | GitLab OAuth client secret | From GitLab OAuth app settings |
 | `GEMINI_API_KEY` | Google Gemini API key | From Google AI Studio |
 
 ### Configuration Files
 
-- `next.config.js`: Next.js configuration
-- `src/env.js`: Environment variable validation
-- `tsconfig.json`: TypeScript compiler configuration
-- `prisma/schema.prisma`: Database schema
+- **`next.config.js`**: Next.js framework configuration
+- **`src/env.js`**: Environment variable validation using `@t3-oss/env-nextjs`
+- **`tsconfig.json`**: TypeScript compiler configuration
+- **`prisma/schema.prisma`**: Database schema definition
 
 ---
 
 ## Dependencies
 
+### Core Dependencies
+
 | Package | Purpose |
 |---------|---------|
-| `next` | Web framework |
-| `@prisma/client` | Database ORM |
-| `next-auth` | Authentication |
-| `@trpc/server` | API layer |
-| `@trpc/react-query` | tRPC React client |
-| `zod` | Validation |
-| `@google/genai` | AI service SDK |
-| `axios` | HTTP client |
-| `adm-zip` | ZIP file handling |
-| `tree-sitter` | Code parsing |
-| `@t3-oss/env-nextjs` | Environment validation |
+| `next` | Web framework and React server components |
+| `@prisma/client` | Type-safe database ORM client |
+| `next-auth` | Authentication library with OAuth support |
+| `@trpc/server` | Type-safe API layer (server) |
+| `@trpc/react-query` | tRPC React client with React Query |
+| `zod` | Runtime type validation |
+| `@google/genai` | Google Gemini AI SDK |
+| `axios` | HTTP client for external requests |
+| `adm-zip` | ZIP file manipulation |
+| `tree-sitter` | Code parsing and AST generation |
+| `@t3-oss/env-nextjs` | Environment variable validation |
 
 ---
 
-## Rate Limiting & Caching
+## Performance & Caching
 
-- Repository and documentation queries are cached for 600 seconds
-- Uses Next.js `unstable_cache` with tagged revalidation
-- Cache tags: `repos-{userId}`, `docs-{projectId}`
+### Caching Strategy
+
+- **Query Caching**: Repository and documentation queries cached for 600 seconds (10 minutes)
+- **Cache Implementation**: Uses Next.js `unstable_cache` with tagged revalidation
+- **Cache Tags**: 
+  - `repos-{userId}` for user repositories
+  - `docs-{projectId}` for project documentation
+
+**Example**:
+
+```typescript
+const cachedRepos = await unstable_cache(
+  async () => {
+    return ctx.db.projectData.findMany({
+      where: { userId: input.userId }
+    });
+  },
+  [`repos-${input.userId}`],
+  {
+    revalidate: 600,
+    tags: [`repos-${input.userId}`]
+  }
+)();
+```
 
 ---
 
 ## Security Considerations
 
-1. **Authentication**: OAuth 2.0 via trusted providers
-2. **Session Management**: Secure database-backed sessions
-3. **Route Protection**: Middleware-based access control
-4. **Token Handling**: Personal access tokens for repository access
-5. **Input Validation**: Zod schemas for all inputs
-6. **Error Handling**: Sanitized error messages in production
+1. **Authentication**: OAuth 2.0 via trusted providers (GitHub, Google, GitLab)
+2. **Session Management**: Secure database-backed sessions with NextAuth.js
+3. **Route Protection**: Middleware-based access control for protected routes
+4. **Token Handling**: Secure handling of personal access tokens for repository access
+5. **Input Validation**: Zod schemas validate all user inputs
+6. **Error Handling**: Sanitized error messages in production (detailed errors in development only)
+7. **CORS**: Configured appropriately for API routes
+8. **Environment Variables**: Validated and type-checked at build time
 
 ---
 
-*Documentation generated by Docy • Last updated: 2026*
+*Documentation generated by Docy • Last updated: January 2026*
