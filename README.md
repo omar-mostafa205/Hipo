@@ -57,6 +57,7 @@ The application will be available at `http://localhost:3000`.
 
 
 The application follows a modern full-stack architecture centered around Next.js and tRPC. The diagram below illustrates the primary components and data flow.
+
 ```mermaid
 graph TD
     subgraph Browser
@@ -93,6 +94,7 @@ graph TD
 
 
 The project is organized following conventions common in T3 Stack applications, separating concerns by feature and domain.
+
 ```
 /
 ├── prisma/
@@ -350,6 +352,7 @@ The application uses Prisma as its ORM. The schema is defined in `prisma/schema.
 
 
 ### ER Diagram
+
 
 ```mermaid
 erDiagram
